@@ -3,3 +3,4 @@ uvicorn
 playwright==1.48.0
 ddddocr==1.5.6
 pillow
+python-multipart
