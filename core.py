@@ -1,11 +1,11 @@
+import hmac
 import os, re, threading
 from contextlib import contextmanager
-
 import ddddocr
 from fastapi import Header, HTTPException
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
-API_KEY  = os.environ["API_KEY"]
+API_KEY  = os.environ["API_KEY"].strip()
 AML_URL  = "https://aml-gui-v1.mfilterit.net"
 AML_USER = os.environ.get("AML_USER")      # shared login (optional, baad me hata sakte ho)
 AML_PASS = os.environ.get("AML_PASS")
@@ -56,9 +56,10 @@ def log_mem(tag):
 
 log_mem("startup (ocr loaded)")
 
-
 def require_key(x_api_key: str = Header(None)):
-    if x_api_key != API_KEY:
+    got = (x_api_key or "").strip()
+    if not hmac.compare_digest(got.encode(), API_KEY.encode()):
+        print(f"[AUTH] 401: header_len={len(got)} env_len={len(API_KEY)}", flush=True)
         raise HTTPException(401, "Invalid API key")
 
 
