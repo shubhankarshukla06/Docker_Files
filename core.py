@@ -88,6 +88,7 @@ def aml_login(page, success_selector, username=None, password=None, max_tries=8)
     password = password or AML_PASS
     if not username or not password:
         raise RuntimeError("AML credentials missing (na request me, na server env me)")
+    last_text = ""
     for attempt in range(1, max_tries + 1):
         page.goto(AML_URL, wait_until="networkidle")
         page.fill(LOGIN_X["user"], username)
@@ -104,5 +105,11 @@ def aml_login(page, success_selector, username=None, password=None, max_tries=8)
             log_mem("login ok")
             return
         except PWTimeout:
-            print(f"Login attempt {attempt} fail (captcha read: {text!r})", flush=True)
-    raise RuntimeError("Login fail: captcha multiple tries me solve nahi hua")
+            try:
+                last_text = re.sub(r"\s+", " ", page.inner_text("body"))[:200]
+            except Exception:
+                last_text = ""
+            print(f"Login attempt {attempt} fail (captcha read: {text!r}) page: {last_text!r}", flush=True)
+    raise RuntimeError(
+        f"Login fail after {max_tries} tries (captcha or AML username/password wrong). Last page text: {last_text}"
+    )

@@ -23,6 +23,8 @@ X = {
 class Req(BaseModel):
     from_date: str   # YYYY-MM-DD
     to_date: str
+    aml_user: str | None = None   # user ka apna AML login (na do to service ka default login)
+    aml_pass: str | None = None
 
 
 @router.post("/export")
@@ -32,10 +34,14 @@ def export(req: Req):
         datetime.strptime(req.to_date, "%Y-%m-%d")
     except ValueError:
         raise HTTPException(400, "Date format YYYY-MM-DD hona chahiye")
+    if bool(req.aml_user) != bool(req.aml_pass):
+        raise HTTPException(400, "aml_user aur aml_pass dono saath bhejo")
+    tries = 3 if req.aml_user else 8      # user ke apne account pe kam retries (lock ka risk)
 
     try:
         with browser_page(accept_downloads=True) as page:
-            aml_login(page, success_selector=X["from"])
+            aml_login(page, success_selector=X["from"],
+                      username=req.aml_user, password=req.aml_pass, max_tries=tries)
 
             page.fill(X["from"], req.from_date)
             page.fill(X["to"], req.to_date)
