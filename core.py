@@ -5,7 +5,13 @@ import ddddocr
 from fastapi import Header, HTTPException
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
-API_KEY  = os.environ["API_KEY"].strip()
+API_KEYS = tuple(dict.fromkeys(
+    value.strip()
+    for name in ("API_KEY", "DOCKER_FILES_API_KEY", "SUMMARY_CSV_API_KEY")
+    if (value := os.environ.get(name, "").strip())
+))
+if not API_KEYS:
+    raise RuntimeError("Configure API_KEY or DOCKER_FILES_API_KEY for service authentication")
 AML_URL  = "https://aml-gui-v1.mfilterit.net"
 AML_USER = os.environ.get("AML_USER")      # shared login (optional, baad me hata sakte ho)
 AML_PASS = os.environ.get("AML_PASS")
@@ -58,8 +64,8 @@ log_mem("startup (ocr loaded)")
 
 def require_key(x_api_key: str = Header(None)):
     got = (x_api_key or "").strip()
-    if not hmac.compare_digest(got.encode(), API_KEY.encode()):
-        print(f"[AUTH] 401: header_len={len(got)} env_len={len(API_KEY)}", flush=True)
+    if not any(hmac.compare_digest(got.encode(), key.encode()) for key in API_KEYS):
+        print(f"[AUTH] 401: header_len={len(got)} configured_key_count={len(API_KEYS)}", flush=True)
         raise HTTPException(401, "Invalid API key")
 
 

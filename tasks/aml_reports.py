@@ -90,18 +90,20 @@ def close_extra_tabs(page):
 def upload_images(page, paths):
     """Images AML ke screenshot fields me page order me. 2 se zyada ho to 'add' button se fields badhao."""
     page.wait_for_selector(X["left_btn"], state="attached", timeout=30000)
-    count = page.locator(X["file_inputs"]).count()
-    while count < len(paths):
-        page.locator(X["add_btn"]).evaluate("el => el.click()")       # JS click (purane code jaisa)
-        expected = count + 2
-        deadline = time.time() + 20
-        while page.locator(X["file_inputs"]).count() < expected:
-            if time.time() > deadline:
-                raise RuntimeError("AML ne naye screenshot fields nahi dikhaye")
-            page.wait_for_timeout(200)
-        count = page.locator(X["file_inputs"]).count()
+    inputs = page.locator(X["file_inputs"])
     for index, path in enumerate(paths):
-        page.locator(X["file_inputs"]).nth(index).set_input_files(path)
+        # AML versions may add one or two fields per click. Wait for the exact
+        # next field needed and re-query each time instead of assuming a batch.
+        while inputs.count() <= index:
+            before = inputs.count()
+            page.locator(X["add_btn"]).evaluate("el => el.click()")
+            expected = before + 1
+            deadline = time.time() + 20
+            while inputs.count() < expected:
+                if time.time() > deadline:
+                    raise RuntimeError("AML ne naye screenshot fields nahi dikhaye")
+                page.wait_for_timeout(200)
+        inputs.nth(index).set_input_files(path, timeout=45000)
 
 
 def open_report_and_get_url(page):
