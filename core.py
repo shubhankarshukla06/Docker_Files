@@ -36,7 +36,9 @@ BROWSER_ARGS = [
     "--renderer-process-limit=1",
 ]
 
-browser_lock = threading.Lock()          # ek time pe ek hi Chromium
+_browser_queue = threading.Condition()
+_browser_next_ticket = 0
+_browser_serving_ticket = 0
 ocr = ddddocr.DdddOcr(show_ad=False)     # startup pe ek baar load
 
 
@@ -74,8 +76,27 @@ def solve_captcha(img_bytes: bytes) -> str:
 
 
 @contextmanager
-def browser_page(accept_downloads=False):
-    with browser_lock, sync_playwright() as p:
+def _browser_slot(on_acquired=None):
+    """Fair process-wide queue for the single AML browser slot."""
+    global _browser_next_ticket, _browser_serving_ticket
+    with _browser_queue:
+        ticket = _browser_next_ticket
+        _browser_next_ticket += 1
+        while ticket != _browser_serving_ticket:
+            _browser_queue.wait()
+    try:
+        if on_acquired:
+            on_acquired()
+        yield
+    finally:
+        with _browser_queue:
+            _browser_serving_ticket += 1
+            _browser_queue.notify_all()
+
+
+@contextmanager
+def browser_page(accept_downloads=False, on_acquired=None):
+    with _browser_slot(on_acquired), sync_playwright() as p:
         browser = p.chromium.launch(headless=True, args=BROWSER_ARGS)
         log_mem("browser launched")
         ctx = browser.new_context(accept_downloads=accept_downloads)

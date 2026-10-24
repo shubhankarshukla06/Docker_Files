@@ -110,8 +110,8 @@ def process_case(page, case_id, action, remark_index):
 def _run_job(job_id, case_ids, action, remark_index, aml_user, aml_pass):
     tries = 3 if aml_user else 8           # user ke apne account pe kam retries (lock ka risk)
     try:
-        _update(job_id, status="running")
-        with browser_page() as page:
+        _update(job_id, status="queued", stage="Waiting for the AML browser")
+        with browser_page(on_acquired=lambda: _update(job_id, status="running", stage="Logging in to AML")) as page:
             aml_login(page, X["landing"], aml_user, aml_pass, max_tries=tries)
             consecutive = 0
             stopped_reason = None
@@ -143,7 +143,6 @@ def _run_job(job_id, case_ids, action, remark_index, aml_user, aml_pass):
         _update(job_id, status="error", message=_short(_scrub(exc, aml_pass), 400) or type(exc).__name__)
         print(f"[CASE ACTIONS] job={job_id[:8]} failed: {type(exc).__name__}", flush=True)
 
-
 @router.post("/case-actions")
 def start_case_actions(req: StartReq):
     action = (req.action or "").strip().lower()
@@ -169,11 +168,10 @@ def start_case_actions(req: StartReq):
     _prune_jobs()
     job_id = uuid.uuid4().hex
     with JOBS_LOCK:
-        if any(j["status"] in ("queued", "running") for j in JOBS.values()):
-            raise HTTPException(409, "Ek case-action job pehle se chal raha hai, uske khatam hone ka wait karo")
         JOBS[job_id] = {
             "status": "queued", "total": len(ids), "completed": 0, "successful": 0, "failed": 0,
-            "action": action, "results": [], "message": None, "cancel": False, "updated_at": time.time(),
+            "action": action, "results": [], "message": None, "stage": "Waiting for the AML browser",
+            "cancel": False, "updated_at": time.time(),
         }
     threading.Thread(
         target=_run_job,

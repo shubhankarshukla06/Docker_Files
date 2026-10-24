@@ -26,7 +26,8 @@ X = {
     "title":       "xpath=/html/body/div[1]/div/form/fieldset[1]/div/div[1]/input",
     "description": "xpath=/html/body/div[1]/div/form/fieldset[1]/div/div[2]/textarea",
     "left_btn":    "xpath=/html/body/div[1]/div/form/fieldset[2]/div/div[1]/div/button",
-    "file_inputs": "xpath=/html/body/div[1]/div/form/fieldset[2]//input[@type='file']",
+    # Added screenshot fields are not consistently kept under fieldset[2] by AML.
+    "file_inputs": "xpath=/html/body/div[1]/div/form//input[@type='file']",
     "add_btn":     "xpath=/html/body/div[1]/div/form/fieldset[2]/button",
     "generate":    "xpath=/html/body/div[1]/div/form/div/button[2]",
     "result_link": "xpath=/html/body/div[1]/div/div/div/div[2]/div[2]/a[2]",
@@ -103,7 +104,9 @@ def upload_images(page, paths):
                 if time.time() > deadline:
                     raise RuntimeError("AML ne naye screenshot fields nahi dikhaye")
                 page.wait_for_timeout(200)
-        inputs.nth(index).set_input_files(path, timeout=45000)
+        field = page.locator(X["file_inputs"]).nth(index)
+        field.wait_for(state="attached", timeout=15000)
+        field.set_input_files(path, timeout=45000)
 
 
 def open_report_and_get_url(page):
@@ -144,8 +147,8 @@ def generate_one(page, row, image_paths):
 def _run_job(job_id, rows, files_dir, aml_user, aml_pass):
     tries = 3 if aml_user else 8
     try:
-        _update(job_id, status="running", stage="Logging in to AML")
-        with browser_page() as page:
+        _update(job_id, status="queued", stage="Waiting for the AML browser")
+        with browser_page(on_acquired=lambda: _update(job_id, status="running", stage="Logging in to AML")) as page:
             aml_login(page, X["landing"], aml_user, aml_pass, max_tries=tries)
             for position, row in enumerate(rows, start=1):
                 with JOBS_LOCK:
@@ -232,11 +235,9 @@ def start_report_job(
         _prune_jobs()
         job_id = uuid.uuid4().hex
         with JOBS_LOCK:
-            if any(j["status"] in ("queued", "running") for j in JOBS.values()):
-                raise HTTPException(409, "Ek report job pehle se chal raha hai, uske khatam hone ka wait karo")
             JOBS[job_id] = {
                 "status": "queued", "total": len(rows), "completed": 0, "successful": 0, "failed": 0,
-                "stage": "Queued", "results": [], "message": None, "cancel": False, "updated_at": time.time(),
+                "stage": "Waiting for the AML browser", "results": [], "message": None, "cancel": False, "updated_at": time.time(),
             }
     except Exception:
         shutil.rmtree(files_dir, ignore_errors=True)
@@ -251,7 +252,10 @@ def report_job_status(job_id: str):
         job = JOBS.get(job_id)
         if not job:
             raise HTTPException(404, "Job not found")
-        return {k: (list(v) if isinstance(v, list) else v) for k, v in job.items() if k != "cancel"}
+        return {
+            key: job.get(key)
+            for key in ("status", "total", "completed", "successful", "failed", "stage", "results", "message", "updated_at")
+        }
 
 
 @router.post("/report-jobs/{job_id}/cancel")
